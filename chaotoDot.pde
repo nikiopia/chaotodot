@@ -4,11 +4,14 @@ float ZERO_TOLERANCE = 0.0001;
 
 // Camera position (deg / XYZ)
 int cameraPosition_lat, cameraPosition_lon;
+float cameraPosition_lat_float = 0;
+float cameraPosition_lon_float = 0;
 float[] cameraPosition_xyz = new float[3];
 int cameraRadius = 5;
 
 // Camera orientation (deg)
 int cameraOrientation_lat, cameraOrientation_lon;
+boolean cameraMoved = true;
 
 // Camera POV i, j, k
 float[] cameraPOV_i = new float[3];
@@ -40,8 +43,10 @@ int lastMouseX, lastMouseY;
 // Perspective sizing
 float distanceToCamera;
 
-// GUI Controls
+// GUI / Simulation controls
 boolean HUD_On = false;
+boolean runSimulation = true;
+boolean resetSimulation = true;
 
 // Point updating
 float timeStep = 0.01;
@@ -65,16 +70,37 @@ String truncate(float value)
 
 void mousePressed()
 {
-  if (mouseX >= (width - 50) && mouseY <= 50)
+  if (mouseX >= (width - 50))
   {
-    HUD_On = !HUD_On;
+    if (mouseY <= 50)
+    {
+      HUD_On = !HUD_On;
+      return;
+    }
+    
+    if (mouseY <= 100)
+    {
+      runSimulation = !runSimulation;
+      return;
+    }
+    
+    if (mouseY <= 150)
+    {
+      resetSimulation = true;
+      return;
+    }
   }
 }
 
 void mouseDragged()
 {
-  lastMouseX = mouseX;
-  lastMouseY = mouseY;
+  cameraPosition_lat_float += (mouseY - pmouseY) * 0.1;
+  cameraPosition_lon_float -= (mouseX - pmouseX) * 0.2;
+  
+  cameraPosition_lat = (round(cameraPosition_lat_float) + 360) % 360;
+  cameraPosition_lon = (round(cameraPosition_lon_float) + 360) % 360;
+  
+  cameraMoved = true;
 }
 
 void mouseWheel(MouseEvent e)
@@ -88,6 +114,8 @@ void mouseWheel(MouseEvent e)
     cameraRadius--;
     if (cameraRadius < 0) { cameraRadius = 0; }
   }
+  
+  cameraMoved = true;
 }
 
 void setup()
@@ -103,14 +131,6 @@ void setup()
       // 2D matrix (Dimension 3x3)
       COBM[i][j] = float(0);
     }
-  }
-  
-  // Populate random starter points
-  for (int i = 0; i < NUMBER_OF_POINTS - 8; i++)
-  {
-    points_x[i] = random(-1, 1);
-    points_y[i] = random(-1, 1);
-    points_z[i] = random(-1, 1);
   }
   
   // Setup starter box
@@ -150,48 +170,66 @@ void draw()
 {
   background(0);
   
-  // Camera position
-  cameraPosition_lat = round(map(lastMouseY, 0, (height - 1), -90, 90));
-  cameraPosition_lon = round(map(lastMouseX, 0, (width - 1), 720, 0));
-  LatLon_toXYZ(cameraPosition_lat, cameraPosition_lon, cameraPosition_xyz, cameraRadius);
-  
-  // Camera orientation
-  cameraOrientation_lat = -cameraPosition_lat;
-  cameraOrientation_lon = (cameraPosition_lon + 180 + 360) % 360;
-  
-  // Camera POV directions
-  LatLon_toXYZ(0, cameraOrientation_lon - 90, cameraPOV_i, 1);
-  LatLon_toXYZ(cameraOrientation_lat, cameraOrientation_lon, cameraPOV_j, 1);
-  LatLon_toXYZ(cameraOrientation_lat + 90, cameraOrientation_lon, cameraPOV_k, 1);
-  
-  // Change of basis matrix
-  a = cameraPOV_i[0];
-  b = cameraPOV_j[0];
-  c = cameraPOV_k[0];
-  d = cameraPOV_i[1];
-  e = cameraPOV_j[1];
-  f = cameraPOV_k[1];
-  g = cameraPOV_i[2];
-  h = cameraPOV_j[2];
-  i = cameraPOV_k[2];
-  determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
-  if (abs(determinant) <= ZERO_TOLERANCE)
+  // Reset simulation if requested
+  if (resetSimulation)
   {
-    println("Determinant <= ZERO_TOLERANCE");
-    return;
+    resetSimulation = false;
+    
+    for (int i = 0; i < NUMBER_OF_POINTS - 8; i++)
+    {
+      points_x[i] = random(-1, 1);
+      points_y[i] = random(-1, 1);
+      points_z[i] = random(-1, 1);
+    }
   }
-  COBM[0][0] = (e * i - f * h) / determinant;
-  COBM[0][1] = -(b * i - c * h) / determinant;
-  COBM[0][2] = (b * f - c * e) / determinant;
-  COBM[1][0] = -(d * i - f * g) / determinant;
-  COBM[1][1] = (a * i - c * g) / determinant;
-  COBM[1][2] = -(a * f - c * d) / determinant;
-  COBM[2][0] = (d * h - e * g) / determinant;
-  COBM[2][1] = -(a * h - b * g) / determinant;
-  COBM[2][2] = (a * e - b * d) / determinant;
+  
+  // Only recompute this graphics stuff if its absolutely necessary
+  if (cameraMoved)
+  {
+    cameraMoved = false;
+    
+    // Camera position
+    LatLon_toXYZ(cameraPosition_lat, cameraPosition_lon, cameraPosition_xyz, cameraRadius);
+    
+    // Camera orientation
+    cameraOrientation_lat = -cameraPosition_lat;
+    cameraOrientation_lon = (cameraPosition_lon + 180 + 360) % 360;
+    
+    // Camera POV directions
+    LatLon_toXYZ(0, cameraOrientation_lon - 90, cameraPOV_i, 1);
+    LatLon_toXYZ(cameraOrientation_lat, cameraOrientation_lon, cameraPOV_j, 1);
+    LatLon_toXYZ(cameraOrientation_lat + 90, cameraOrientation_lon, cameraPOV_k, 1);
+    
+    // Change of basis matrix -- setting up matrix for easy formula use
+    a = cameraPOV_i[0];
+    b = cameraPOV_j[0];
+    c = cameraPOV_k[0];
+    d = cameraPOV_i[1];
+    e = cameraPOV_j[1];
+    f = cameraPOV_k[1];
+    g = cameraPOV_i[2];
+    h = cameraPOV_j[2];
+    i = cameraPOV_k[2];
+    determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    if (abs(determinant) <= ZERO_TOLERANCE)
+    {
+      println("Determinant <= ZERO_TOLERANCE");
+      return;
+    }
+    
+    // Use the adjoint + determinant method for 3x3 matrix inverse
+    COBM[0][0] = (e * i - f * h) / determinant;
+    COBM[0][1] = -(b * i - c * h) / determinant;
+    COBM[0][2] = (b * f - c * e) / determinant;
+    COBM[1][0] = -(d * i - f * g) / determinant;
+    COBM[1][1] = (a * i - c * g) / determinant;
+    COBM[1][2] = -(a * f - c * d) / determinant;
+    COBM[2][0] = (d * h - e * g) / determinant;
+    COBM[2][1] = -(a * h - b * g) / determinant;
+    COBM[2][2] = (a * e - b * d) / determinant;
+  }
   
   // Point display / Render pipeline
-  
   for (int index = 0; index < NUMBER_OF_POINTS; index++)
   { 
     // Create static copy of current point location so original copy can be updated
@@ -199,7 +237,7 @@ void draw()
     y = points_y[index];
     z = points_z[index];
     
-    if (index < NUMBER_OF_POINTS - 8)
+    if (runSimulation && index < NUMBER_OF_POINTS - 8)
     {
       // Update point location according to formulas
       points_x[index] += timeStep * (-1.89 * x - 4 * y - 4 * z - y * y);
@@ -251,31 +289,57 @@ void draw()
   //time += 1;
   //time = (time + 360) % 360;
   
-  // GUI Controls
+  // GUI / Simulation Controls
   stroke(0);
   textAlign(CENTER, CENTER);
+  textSize(20);
+  
+  // HUD Control
   if (HUD_On)
   {
     fill(0, 255, 0);
-  }
-  else
-  {
-    fill(255, 0, 0);
-  }
-  rect(width - 50, 0, 50, 50);
-  if (HUD_On)
-  {
+    rect(width - 50, 0, 50, 50);
     fill(0);
   }
   else
   {
+    fill(255, 0, 0);
+    rect(width - 50, 0, 50, 50);
     fill(255);
   }
-  textSize(20);
   text("HUD", width - 25, 25);
   
-  // HUD
+  // RUN Control
+  if (runSimulation)
+  {
+    fill(0, 255, 0);
+    rect(width - 50, 50, 50, 50);
+    fill(0);
+  }
+  else
+  {
+    fill(255, 0, 0);
+    rect(width - 50, 50, 50, 50);
+    fill(255);
+  }
+  text("RUN", width - 25, 75);
   
+  // RST Control
+  if (resetSimulation)
+  {
+    fill(0, 255, 0);
+    rect(width - 50, 100, 50, 50);
+    fill(0);
+  }
+  else
+  {
+    fill(255, 0, 0);
+    rect(width - 50, 100, 50, 50);
+    fill(255);
+  }
+  text("RST", width - 25, 125);
+  
+  // HUD
   if (HUD_On)
   {
     fill(0, 255, 0);
@@ -302,6 +366,21 @@ void draw()
     
     // Camera radius
     text("Camera Radius: " + str(cameraRadius), 10, 310);
+    
+    // Graphical angle depictions
+    textAlign(CENTER, CENTER);
+    textSize(15);
+    text("LAT", width - 250, 70);
+    text("LON", width - 120, 70);
+    
+    noFill();
+    stroke(255);
+    circle(width - 120, 70, 100);
+    circle(width - 250, 70, 100);
+    
+    fill(200, 100, 0);
+    circle((width - 120) + 50 * cos(radians(cameraPosition_lon)), 70 - 50 * sin(radians(cameraPosition_lon)), 20);
+    circle((width - 250) + 50 * cos(radians(cameraPosition_lat)), 70 - 50 * sin(radians(cameraPosition_lat)), 20);
   }
   
   textAlign(RIGHT, BOTTOM);
