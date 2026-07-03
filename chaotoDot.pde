@@ -1,13 +1,16 @@
 // ----- CONTROL VARIABLES ----- //
 
 float ZERO_TOLERANCE = 0.0001;
+int[] zeroVector = new int[3];
 
 // Camera position (deg / XYZ)
 int cameraPosition_lat, cameraPosition_lon;
 float cameraPosition_lat_float = 0;
 float cameraPosition_lon_float = 0;
 float[] cameraPosition_xyz = new float[3];
+int[] cameraOffset_xyz = new int[3];
 int cameraRadius = 5;
+int dimensionUnlock = -1;
 
 // Camera orientation (deg)
 int cameraOrientation_lat, cameraOrientation_lon;
@@ -54,16 +57,40 @@ float x, y, z;
 
 // ----- HELPER FUNCTIONS ----- //
 
-void LatLon_toXYZ(int lat, int lon, float[] xyz, int radius)
+void LatLon_toXYZ(int lat, int lon, int radius, int cameraOffset_xyz[], float[] xyz)
 {
-  xyz[0] = radius * cos(radians(lat)) * cos(radians(lon));
-  xyz[1] = radius * cos(radians(lat)) * sin(radians(lon));
-  xyz[2] = radius * sin(radians(lat));
+  xyz[0] = cameraOffset_xyz[0] + radius * cos(radians(lat)) * cos(radians(lon));
+  xyz[1] = cameraOffset_xyz[1] + radius * cos(radians(lat)) * sin(radians(lon));
+  xyz[2] = cameraOffset_xyz[2] + radius * sin(radians(lat));
 }
 
 String truncate(float value)
 {
   return str(round(value * 100) / 100.0);
+}
+
+void setupStarterBox()
+{
+  int currentPoint = NUMBER_OF_POINTS - 8;
+  for (int x = cameraOffset_xyz[0] - 1; x <= cameraOffset_xyz[0] + 1; x += 2)
+  {
+    for (int y = cameraOffset_xyz[1] - 1; y <= cameraOffset_xyz[1] + 1; y += 2)
+    {
+      for (int z = cameraOffset_xyz[2] - 1; z <= cameraOffset_xyz[2] + 1; z += 2)
+      {
+        if (currentPoint >= NUMBER_OF_POINTS)
+        {
+          println("Error: Malformed starter box setup");
+          return;
+        }
+        
+        points_x[currentPoint] = float(x);
+        points_y[currentPoint] = float(y);
+        points_z[currentPoint] = float(z);
+        currentPoint++;
+      }
+    }
+  }
 }
 
 // ----- CORE FUNCTIONS ----- //
@@ -89,6 +116,24 @@ void mousePressed()
       resetSimulation = true;
       return;
     }
+    
+    if (mouseY <= 250)
+    {
+      dimensionUnlock = dimensionUnlock == -1 ? 0 : -1;
+      return;
+    }
+    
+    if (mouseY <= 300)
+    {
+      dimensionUnlock = dimensionUnlock == -1 ? 1 : -1;
+      return;
+    }
+    
+    if (mouseY <= 350)
+    {
+      dimensionUnlock = dimensionUnlock == -1 ? 2 : -1;
+      return;
+    }
   }
 }
 
@@ -107,12 +152,45 @@ void mouseWheel(MouseEvent e)
 {
   if (e.getCount() > 0)
   {
-    cameraRadius++;
+    switch (dimensionUnlock)
+    {
+      case 0:
+        cameraOffset_xyz[0] += 1;
+        break;
+      case 1:
+        cameraOffset_xyz[1] += 1;
+        break;
+      case 2:
+        cameraOffset_xyz[2] += 1;
+        break;
+      default:
+        cameraRadius++;
+        break;
+    }
   }
   else
   {
-    cameraRadius--;
-    if (cameraRadius < 0) { cameraRadius = 0; }
+    switch (dimensionUnlock)
+    {
+      case 0:
+        cameraOffset_xyz[0] -= 1;
+        break;
+      case 1:
+        cameraOffset_xyz[1] -= 1;
+        break;
+      case 2:
+        cameraOffset_xyz[2] -= 1;
+        break;
+      default:
+        cameraRadius--;
+        cameraRadius = cameraRadius < 0 ? 0 : cameraRadius;
+        break;
+    }
+  }
+  
+  if (dimensionUnlock != -1)
+  {
+    setupStarterBox();
   }
   
   cameraMoved = true;
@@ -125,6 +203,8 @@ void setup()
   {
     // 1D vectors (Dimension 3)
     cameraPosition_xyz[i] = float(0);
+    cameraOffset_xyz[i] = 0;
+    zeroVector[i] = 0;
     
     for (int j = 0; j < 3; j++)
     {
@@ -134,26 +214,7 @@ void setup()
   }
   
   // Setup starter box
-  int currentPoint = NUMBER_OF_POINTS - 8;
-  for (int x = -1; x <= 1; x += 2)
-  {
-    for (int y = -1; y <= 1; y += 2)
-    {
-      for (int z = -1; z <= 1; z += 2)
-      {
-        if (currentPoint >= NUMBER_OF_POINTS)
-        {
-          println("Error: Malformed starter box setup");
-          return;
-        }
-        
-        points_x[currentPoint] = float(x);
-        points_y[currentPoint] = float(y);
-        points_z[currentPoint] = float(z);
-        currentPoint++;
-      }
-    }
-  }
+  setupStarterBox();
   
   // Screen configuration
   size(700, 600);
@@ -177,9 +238,9 @@ void draw()
     
     for (int i = 0; i < NUMBER_OF_POINTS - 8; i++)
     {
-      points_x[i] = random(-1, 1);
-      points_y[i] = random(-1, 1);
-      points_z[i] = random(-1, 1);
+      points_x[i] = float(cameraOffset_xyz[0]) + random(-1, 1);
+      points_y[i] = float(cameraOffset_xyz[1]) + random(-1, 1);
+      points_z[i] = float(cameraOffset_xyz[2]) + random(-1, 1);
     }
   }
   
@@ -189,16 +250,16 @@ void draw()
     cameraMoved = false;
     
     // Camera position
-    LatLon_toXYZ(cameraPosition_lat, cameraPosition_lon, cameraPosition_xyz, cameraRadius);
+    LatLon_toXYZ(cameraPosition_lat, cameraPosition_lon, cameraRadius, cameraOffset_xyz, cameraPosition_xyz);
     
     // Camera orientation
     cameraOrientation_lat = -cameraPosition_lat;
     cameraOrientation_lon = (cameraPosition_lon + 180 + 360) % 360;
     
     // Camera POV directions
-    LatLon_toXYZ(0, cameraOrientation_lon - 90, cameraPOV_i, 1);
-    LatLon_toXYZ(cameraOrientation_lat, cameraOrientation_lon, cameraPOV_j, 1);
-    LatLon_toXYZ(cameraOrientation_lat + 90, cameraOrientation_lon, cameraPOV_k, 1);
+    LatLon_toXYZ(0, cameraOrientation_lon - 90, 1, zeroVector, cameraPOV_i);
+    LatLon_toXYZ(cameraOrientation_lat, cameraOrientation_lon, 1, zeroVector, cameraPOV_j);
+    LatLon_toXYZ(cameraOrientation_lat + 90, cameraOrientation_lon, 1, zeroVector, cameraPOV_k);
     
     // Change of basis matrix -- setting up matrix for easy formula use
     a = cameraPOV_i[0];
@@ -239,10 +300,25 @@ void draw()
     
     if (runSimulation && index < NUMBER_OF_POINTS - 8)
     {
-      // Update point location according to formulas
-      points_x[index] += timeStep * (-1.89 * x - 4 * y - 4 * z - y * y);
-      points_y[index] += timeStep * (-1.89 * y - 4 * z - 4 * x - z * z);
-      points_z[index] += timeStep * (-1.89 * z - 4 * x - 4 * y - x * x);
+      if (dist(points_x[index], points_y[index], points_z[index], cameraOffset_xyz[0], cameraOffset_xyz[1], cameraOffset_xyz[2]) < MAX_RADIUS)
+      {
+        // Update point location according to formulas
+        
+        // Halvorsen Attractor
+        points_x[index] += timeStep * (-1.89 * x - 4 * y - 4 * z - y * y);
+        points_y[index] += timeStep * (-1.89 * y - 4 * z - 4 * x - z * z);
+        points_z[index] += timeStep * (-1.89 * z - 4 * x - 4 * y - x * x);
+        
+        // Sprott Attractor
+        //points_x[index] += timeStep * (y + 2.07 * x * y + x * z);
+        //points_y[index] += timeStep * (1 - 1.79 * x * x + y * z);
+        //points_z[index] += timeStep * (x - x * x - y * y);
+      
+        //  Attractor
+        //points_x[index] += timeStep * ();
+        //points_y[index] += timeStep * ();
+        //points_z[index] += timeStep * ();
+      }
     }
     
     // Transform point locations into coordinates relative to camera's POV
@@ -270,7 +346,8 @@ void draw()
     else
     {
       // Points to be updated
-      if (sqrt(pow(cameraPosition_xyz[0] - x,2) + pow(cameraPosition_xyz[1] - y,2) + pow(cameraPosition_xyz[2] - z,2)) < MAX_RADIUS)
+      //if (sqrt(pow(cameraPosition_xyz[0] - x,2) + pow(cameraPosition_xyz[1] - y,2) + pow(cameraPosition_xyz[2] - z,2)) < MAX_RADIUS)
+      if (dist(cameraPosition_xyz[0], cameraPosition_xyz[1], cameraPosition_xyz[2], x, y, z) < MAX_RADIUS)
       {
         // Still actively within maximum radius
         fill(0, 255, 0);
@@ -339,6 +416,48 @@ void draw()
   }
   text("RST", width - 25, 125);
   
+  if (dimensionUnlock == 0)
+  {
+    fill(0, 255, 0);
+    rect(width - 50, 200, 50, 50);
+    fill(0);
+  }
+  else
+  {
+    fill(255, 0, 0);
+    rect(width - 50, 200, 50, 50);
+    fill(255);
+  }
+  text("X", width - 25, 225);
+  
+  if (dimensionUnlock == 1)
+  {
+    fill(0, 255, 0);
+    rect(width - 50, 250, 50, 50);
+    fill(0);
+  }
+  else
+  {
+    fill(255, 0, 0);
+    rect(width - 50, 250, 50, 50);
+    fill(255);
+  }
+  text("Y", width - 25, 275);
+  
+  if (dimensionUnlock == 2)
+  {
+    fill(0, 255, 0);
+    rect(width - 50, 300, 50, 50);
+    fill(0);
+  }
+  else
+  {
+    fill(255, 0, 0);
+    rect(width - 50, 300, 50, 50);
+    fill(255);
+  }
+  text("Z", width - 25, 325);
+  
   // HUD
   if (HUD_On)
   {
@@ -350,22 +469,23 @@ void draw()
     text("CAMERA POSITION:", 10, 10);
     text("CamPos Lat: " + truncate(cameraPosition_lat) + ", Lon: " + truncate(cameraPosition_lon), 10, 30);
     text("CamPos XYZ: " + truncate(cameraPosition_xyz[0]) + " / " + truncate(cameraPosition_xyz[1]) + " / " + truncate(cameraPosition_xyz[2]), 10, 50);
+    text("CamOff XYZ: " + str(cameraOffset_xyz[0]) + " / " + str(cameraOffset_xyz[1]) + " / " + str(cameraOffset_xyz[2]), 10, 70);
     
     // Camera orientation
-    text("CAMERA ORIENTATION:", 10, 90);
-    text("CamOri Lat: " + str(cameraOrientation_lat) + " Lon: " + str(cameraOrientation_lon), 10, 110);
-    text("CamPOV i: " + truncate(cameraPOV_i[0]) + " / " + truncate(cameraPOV_i[1]) + " / " + truncate(cameraPOV_i[2]), 10, 130);
-    text("CamPOV j: " + truncate(cameraPOV_j[0]) + " / " + truncate(cameraPOV_j[1]) + " / " + truncate(cameraPOV_j[2]), 10, 150);
-    text("CamPOV k: " + truncate(cameraPOV_k[0]) + " / " + truncate(cameraPOV_k[1]) + " / " + truncate(cameraPOV_k[2]), 10, 170);
+    text("CAMERA ORIENTATION:", 10, 110);
+    text("CamOri Lat: " + str(cameraOrientation_lat) + " Lon: " + str(cameraOrientation_lon), 10, 130);
+    text("CamPOV i: " + truncate(cameraPOV_i[0]) + " / " + truncate(cameraPOV_i[1]) + " / " + truncate(cameraPOV_i[2]), 10, 150);
+    text("CamPOV j: " + truncate(cameraPOV_j[0]) + " / " + truncate(cameraPOV_j[1]) + " / " + truncate(cameraPOV_j[2]), 10, 170);
+    text("CamPOV k: " + truncate(cameraPOV_k[0]) + " / " + truncate(cameraPOV_k[1]) + " / " + truncate(cameraPOV_k[2]), 10, 190);
     
     // COBM
-    text("CHANGE OF BASIS MATRIX:", 10, 210);
-    text("[ " + truncate(COBM[0][0]) + " / " + truncate(COBM[0][1]) + " / " + truncate(COBM[0][2]) + " ]", 10, 230);
-    text("[ " + truncate(COBM[1][0]) + " / " + truncate(COBM[1][1]) + " / " + truncate(COBM[1][2]) + " ]", 10, 250);
-    text("[ " + truncate(COBM[2][0]) + " / " + truncate(COBM[2][1]) + " / " + truncate(COBM[2][2]) + " ]", 10, 270);
+    text("CHANGE OF BASIS MATRIX:", 10, 230);
+    text("[ " + truncate(COBM[0][0]) + " / " + truncate(COBM[0][1]) + " / " + truncate(COBM[0][2]) + " ]", 10, 250);
+    text("[ " + truncate(COBM[1][0]) + " / " + truncate(COBM[1][1]) + " / " + truncate(COBM[1][2]) + " ]", 10, 270);
+    text("[ " + truncate(COBM[2][0]) + " / " + truncate(COBM[2][1]) + " / " + truncate(COBM[2][2]) + " ]", 10, 290);
     
     // Camera radius
-    text("Camera Radius: " + str(cameraRadius), 10, 310);
+    text("Camera Radius: " + str(cameraRadius), 10, 330);
     
     // Graphical angle depictions
     textAlign(CENTER, CENTER);
